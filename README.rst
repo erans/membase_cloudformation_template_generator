@@ -8,6 +8,7 @@ This script is based on the CouchbaseLabs CloudFormation script located at: http
 I've updated it to support all instance types (including micro) and utilize the max amount of RAM per instance (80% of available RAM).
 
 Script implementation comments:
+===============================
 * t1.micro instances use 32 bit to better utilize the 613MB available to it.
 * All 32bit instances (t1.micro and m1.small) use EBS since it was easier to implement the generic script this way. This may change in the future.
 * 64bit instances use instance store to maximize performance. You will have to add additional servers and/or update a backup script (read here about Membase backup and restore - http://www.couchbase.org/wiki/display/membase/Backup+and+Restore+with+Membase). This may also change in the future as I may introduce built-in backup to S3
@@ -15,6 +16,7 @@ Script implementation comments:
 
 
 Benefits of using this template over AWS ElastiCache:
+=====================================================
 * Can be created on any region 
 * Utilize Reserved Instance to significantly lower the cost (around 40%-60% reduction - check out the new reserved instances pricing: http://aws.typepad.com/aws/2011/12/reserved-instance-options-for-amazon-ec2.html - the heavy utilization seems like a perfect fit!)
 * You can resize your cluster with no downtime (thanks to Membase's built in support and rebalancing ability)
