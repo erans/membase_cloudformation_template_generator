@@ -1,0 +1,393 @@
+{
+ "AWSTemplateFormatVersion" : "2010-09-09",
+ "Description" : "Template for membase server on EC2 with public DNS names. 32 bit uses EBS backed Amazon Linux AMI. 64 bit uses instance store.",
+ "Parameters" : {
+    "MembaseVersion" : {
+      "Description" : "Membase version to use",
+      "Type" : "String",
+      "Default" : "1.7.2"
+    },
+    "KeyName" : {
+      "Description" : "Name of an existing EC2 KeyPair to enable SSH access to the instance",
+      "Type" : "String"
+    },
+    "InstanceType": {
+      "Default": "t1.micro",
+      "Description": "Type of EC2 instances (t1.micro, m1.small, m1.large, m1.xlarge, m2.xlarge, m2.2xlarge, m2.4xlarge, c1.xlarge)",
+      "Type": "String",
+      "AllowedValues" : ["t1.micro", "m1.small", "m1.large", "m1.xlarge", "m2.xlarge", "m2.2xlarge", "m2.4xlarge", "c1.xlarge"]
+    },
+	"CreateDefaultBucket" : {
+		"Default" : "no",
+		"Description" : "Should this script create a default bucket (yes or no)",
+		"Type" : "String",
+		"AllowedValues" : ["yes", "no"]
+	},
+	"DefaultBucketPassword" : {
+		"NoEcho" : "true",
+		"Default" : "none",
+		"Description" : "Default bucket password (emtpy by default, but recommended to be set!)",
+		"Type" : "String"
+	},
+	"RESTUserName" : {
+		"Default" : "Administrator",
+		"Description" : "Username for REST Administrator API and web-console interface",
+		"Type" : "String"
+	},
+    "RESTPassword" : {
+      "NoEcho": "true",
+      "Description" : "Password for REST Administrator API and web-console interface",
+      "Type" : "String"
+    },
+    "ExistingClusterHostPort" : {
+      "Description" : "Optional 'host:port', if you want to join new node(s) to an existing cluster node.  Leave as 'host:port' to not join to an existing cluster",
+      "Type" : "String",
+      "Default" : "host:port"
+    },
+    "UserTag" : {
+      "Description" : "Optional tag value, to help track your launched EC2 instances",
+      "Type" : "String",
+      "Default" : "none"
+    },
+    "AfterInstall" : {
+      "Description" : "Optional single-line sh script to run after install, before configuration/join.",
+      "Type" : "String",
+      "Default" : "#"
+    },
+    "AfterConfigure" : {
+      "Description" : "Optional single-line sh script to run after configuration/join.",
+      "Type" : "String",
+      "Default" : "#"
+    }
+    
+  },
+
+  "Mappings" : {
+	"Arch2PackageBaseFileName" : {
+		"32" : { "BaseFileName" : "/membase-server-community_x86_" },
+		"64" : { "BaseFileName" : "/membase-server-community_x86_64_"}
+	},
+    "AWSInstanceType2Arch" : {
+	  "t1.micro"   : { "Arch" : "32" },
+ 	  "m1.small"   : { "Arch" : "32" },
+      "m1.large"   : { "Arch" : "64" },
+      "m1.xlarge"  : { "Arch" : "64" },
+      "m2.xlarge"  : { "Arch" : "64" },
+      "m2.2xlarge" : { "Arch" : "64" },
+      "m2.4xlarge" : { "Arch" : "64" },
+      "c1.xlarge"  : { "Arch" : "64" }
+    },
+    "AWSRegionArch2AMI" : {
+      "us-east-1"      : { "32" : "ami-31814f58", "64" : "ami-41814f28" },
+      "us-west-1"      : { "32" : "ami-11d68a54", "64" : "ami-09d68a4c" },
+      "us-west-2"      : { "32" : "ami-38fe7308", "64" : "ami-caff72fa" },
+      "eu-west-1"      : { "32" : "ami-973b06e3", "64" : "ami-a33b06d7" },
+      "ap-northeast-1" : { "32" : "ami-0644f007", "64" : "ami-f45beff5" },
+      "ap-southeast-1" : { "32" : "ami-b4b0cae6", "64" : "ami-80b0cad2" }
+    },
+	"AWSInstanceType2RAMPerServer" : {
+		"t1.micro"   : { "RAM" : "482"   },
+		"m1.small"   : { "RAM" : "1342"  },
+		"m1.large"   : { "RAM" : "6449"  },
+		"m1.xlarge"  : { "RAM" : "13993" },
+		"m2.xlarge"  : { "RAM" : "16095" },
+		"m2.2xlarge" : { "RAM" : "33286" },
+		"m2.4xlarge" : { "RAM" : "67670" },
+		"c1.xlarge"  : { "RAM" : "5945"  }
+	},
+	"AWSInstanceType2IsEBS" : {
+		"t1.micro"   : { "IsEBS" : "1" },
+		"m1.small"   : { "IsEBS" : "1" },
+		"m1.large"   : { "IsEBS" : "0" },
+		"m1.xlarge"  : { "IsEBS" : "0" },
+		"m2.xlarge"  : { "IsEBS" : "0" },
+		"m2.2xlarge" : { "IsEBS" : "0" },
+		"m2.4xlarge" : { "IsEBS" : "0" },
+		"c1.xlarge"  : { "IsEBS" : "0" }		
+	}
+  },
+
+  "Resources" : { 
+    "ServerNode0" : {
+      "Type" : "AWS::EC2::Instance",
+      "Properties" : {
+         "KeyName" : { "Ref" : "KeyName" },
+         "SecurityGroups" : [ { "Ref" : "InstanceSecurityGroup" } ],
+         "ImageId": {
+           "Fn::FindInMap": [
+            "AWSRegionArch2AMI",
+            {
+              "Ref": "AWS::Region"
+            },
+            {
+              "Fn::FindInMap": [
+                "AWSInstanceType2Arch",
+                {
+                  "Ref": "InstanceType"
+                },
+                "Arch"
+              ]
+            }
+          ]
+        },
+        "InstanceType" : { "Ref" : "InstanceType" },
+        "Tags" : [ {
+            "Key" : "Name",
+            "Value" :  { "Fn::Join" : ["", [ { "Ref" : "AWS::StackName" }, "-0" ]]}
+          }, {
+            "Key" : "MembaseVersion",
+            "Value" : { "Ref" : "MembaseVersion" }
+          }, {
+            "Key" : "UserTag",
+            "Value" : { "Ref" : "UserTag" }
+          }
+        ],
+        "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [ 
+            "#!/bin/bash -ex","\n",
+            "yum -y install openssl098e","\n",
+            "wget ", {
+	           "Fn::Join" : ["", 
+	             [
+	               "http://packages.couchbase.com/releases/", 
+	               { "Ref" : "MembaseVersion" }, 
+	               { "Fn::FindInMap" : ["Arch2PackageBaseFileName", { "Fn::FindInMap": [ "AWSInstanceType2Arch", { "Ref": "InstanceType" }, "Arch" ] }, "BaseFileName"] }, 
+	               { "Ref" : "MembaseVersion" },
+	               ".rpm" ] 
+	             ]
+	         },"\n",
+            "rpm -i membase-server-community*.rpm","\n",
+			"sleep 5","\n",
+			
+			"echo Changing the server to identify with its public DNS name", "\n",
+			"PUBLIC_DNS=`curl -s http://169.254.169.254/latest/meta-data/public-hostname`", "\n",
+			"/etc/init.d/membase-server stop", "\n",
+			"sed -e 's/server.pid\\\\\"\"/server.pid\\\\\"\" \\\\/' /opt/membase/bin/membase-server > ./membase-server-tmp", "\n",
+			"echo     -name ns_1@$PUBLIC_DNS >> ./membase-server-tmp", "\n",
+			"cp ./membase-server-tmp /opt/membase/bin/membase-server", "\n",
+			"rm -rf /opt/membase/var/lib/membase/data/*", "\n",
+			"rm -rf /opt/membase/var/lib/membase/mnesia/*", "\n",
+			"rm -rf /opt/membase/var/lib/membase/config/config.dat", "\n",
+			"/etc/init.d/membase-server start", "\n",
+						
+			"sleep 5","\n",
+
+            "/bin/sh -c \"", { "Ref" : "AfterInstall" }, "\"\n",
+            "sleep 5","\n",
+            
+            "if [ \"0\" == \"", { "Fn::FindInMap" : ["AWSInstanceType2IsEBS", { "Ref": "InstanceType" }, "IsEBS"] }, "\" ]; then","\n",
+			"  echo Creating new data dir", "\n",
+			"  mkdir /media/ephemeral0/membase/", "\n",
+			"  echo Changing new data dir ownership to membase user", "\n",
+			"  chown -R membase:membase /media/ephemeral0/membase/", "\n",
+			"  echo Moving data path to ephermal storage", "\n",
+			"  /opt/membase/bin/membase node-init -c 127.0.0.1:8091 -u ", { "Ref" : "RESTUserName" } , " -p ", { "Ref" : "RESTPassword" }, " --node-init-data-path=/media/ephemeral0/membase/", "\n",
+			"fi", "\n",
+
+            "if [ \"host:port\" != \"", { "Ref" : "ExistingClusterHostPort" }, "\" ]; then","\n",
+            "  echo Joining existing membase cluster...","\n",
+            "  /opt/membase/bin/membase server-add",
+            "    -u ", { "Ref" : "RESTUserName" }," -p ", { "Ref" : "RESTPassword" },
+            "    -c ", { "Ref" : "ExistingClusterHostPort" },
+            "    --server-add=`curl -s http://169.254.169.254/latest/meta-data/public-hostname`:8091","\n",
+            "else","\n",
+            "  echo New membase cluster...","\n",
+              "  /opt/membase/bin/membase cluster-init -c 127.0.0.1",
+              "    --cluster-init-username=", { "Ref" : "RESTUserName" },
+              "    --cluster-init-password=", { "Ref" : "RESTPassword" },
+              "    --cluster-init-ramsize=", { "Fn::FindInMap" : [ "AWSInstanceType2RAMPerServer", { "Ref" : "InstanceType" }, "RAM" ] },"\n",
+              "  echo Creating default bucket...", "\n",
+              "  if [\"yes\" == \"", { "Ref" : "CreateDefaultBucket" }, "\"]; then", "\n",
+              "    /opt/membase/bin/membase bucket-create -c 127.0.0.1",
+              "      -u ", { "Ref" : "RESTUserName" }, " -p ", { "Ref" : "RESTPassword" },
+              "      --bucket=default",
+              "      --bucket-type=membase",
+              "      --bucket-password=", { "Ref" : "DefaultBucketPassword" },
+              "      --bucket-ramsize=", { "Fn::FindInMap" : [ "AWSInstanceType2RAMPerServer", { "Ref" : "InstanceType" }, "RAM" ] },
+              "      --bucket-replica=0", "\n",
+              "  fi", "\n",
+            "fi","\n",
+            "/bin/sh -c \"", { "Ref" : "AfterConfigure" }, "\"\n"
+            
+              ,
+              "curl -X PUT -H 'Content-Type:' --data-binary '{\"Status\" : \"SUCCESS\",",
+                                                             "\"Reason\" : \"ServerNode0 node is ready\",",
+                                                             "\"UniqueId\" : \"membase\",",
+                                                             "\"Data\" : \"Done\"}' ",
+                    "\"", {"Ref" : "WaitForServerNode0WaitHandle"}, "\"\n"
+            
+        ]]}}
+      }
+      
+    },
+   
+{% for i in range(1, num_of_servers) %}   
+    "ServerNode{{ i }}" : {
+      "Type" : "AWS::EC2::Instance",
+      "Properties" : {
+        "KeyName" : { "Ref" : "KeyName" },
+        "SecurityGroups" : [ { "Ref" : "InstanceSecurityGroup" } ],
+        "ImageId": {
+          "Fn::FindInMap": [
+            "AWSRegionArch2AMI",
+            {
+              "Ref": "AWS::Region"
+            },
+            {
+              "Fn::FindInMap": [
+                "AWSInstanceType2Arch",
+                {
+                  "Ref": "InstanceType"
+                },
+                "Arch"
+              ]
+            }
+          ]
+        },
+        "InstanceType" : { "Ref" : "InstanceType" },
+        "Tags" : [ {
+            "Key" : "Name",
+            "Value" :  { "Fn::Join" : ["", [ { "Ref" : "AWS::StackName" }, "-2" ]]}
+          }, {
+            "Key" : "PackageURL",
+            "Value" : {
+	           "Fn::Join" : ["", 
+	             [
+	               "http://packages.couchbase.com/releases/", 
+	               { "Ref" : "MembaseVersion" }, 
+	               { "Fn::FindInMap" : ["Arch2PackageBaseFileName", { "Fn::FindInMap": [ "AWSInstanceType2Arch", { "Ref": "InstanceType" }, "Arch" ] }, "BaseFileName"] }, 
+	               { "Ref" : "MembaseVersion" },	
+	               ".rpm" ] 
+	             ]
+	         }
+          }, {
+            "Key" : "UserTag",
+            "Value" : { "Ref" : "UserTag" }
+          }
+        ],
+        "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
+	    	"#!/bin/bash -ex","\n",
+	    	"yum -y install openssl098e","\n",
+	    	"wget ", {
+	           "Fn::Join" : ["", 
+	             [
+	               "http://packages.couchbase.com/releases/", 
+	               { "Ref" : "MembaseVersion" }, 
+	               { "Fn::FindInMap" : ["Arch2PackageBaseFileName", { "Fn::FindInMap": [ "AWSInstanceType2Arch", { "Ref": "InstanceType" }, "Arch" ] }, "BaseFileName"] }, 
+	               { "Ref" : "MembaseVersion" },	
+	               ".rpm" ] 
+	             ]
+	         },"\n",
+	    	"rpm -i membase-server-community*.rpm","\n",
+			"sleep 5","\n",
+
+			"echo Changing the server to identify with its public DNS name", "\n",
+			"PUBLIC_DNS=`curl -s http://169.254.169.254/latest/meta-data/public-hostname`", "\n",
+			"/etc/init.d/membase-server stop", "\n",
+			"sed -e 's/server.pid\\\\\"\"/server.pid\\\\\"\" \\\\/' /opt/membase/bin/membase-server > ./membase-server-tmp", "\n",
+			"echo     -name ns_1@$PUBLIC_DNS >> ./membase-server-tmp", "\n",
+			"cp ./membase-server-tmp /opt/membase/bin/membase-server", "\n",
+			"rm -rf /opt/membase/var/lib/membase/data/*", "\n",
+			"rm -rf /opt/membase/var/lib/membase/mnesia/*", "\n",
+			"rm -rf /opt/membase/var/lib/membase/config/config.dat", "\n",
+			"/etc/init.d/membase-server start", "\n",
+
+			"sleep 5","\n",
+
+	        "/bin/sh -c \"", { "Ref" : "AfterInstall" }, "\"\n",
+	        "sleep 5","\n",
+	
+            "if [ \"0\" == \"", { "Fn::FindInMap" : ["AWSInstanceType2IsEBS", { "Ref": "InstanceType" }, "IsEBS"] }, "\" ]; then","\n",
+			"  echo Creating new data dir", "\n",
+			"  mkdir /media/ephemeral0/membase/", "\n",
+			"  echo Changing new data dir ownership to membase user", "\n",
+			"  chown -R membase:membase /media/ephemeral0/membase/", "\n",
+			"  echo Moving data path to ephermal storage", "\n",
+			"  /opt/membase/bin/membase node-init -c 127.0.0.1:8091 -u ", { "Ref" : "RESTUserName" } , " -p ", { "Ref" : "RESTPassword" }, " --node-init-data-path=/media/ephemeral0/membase/", "\n",
+			"fi", "\n",	
+        
+	        "if [ \"host:port\" != \"", { "Ref" : "ExistingClusterHostPort" }, "\" ]; then","\n",
+	        "  echo Existing membase cluster...","\n",
+	        "  /opt/membase/bin/membase server-add",
+	        "    -u ", { "Ref" : "RESTUserName" }, " -p ", { "Ref" : "RESTPassword" },
+	        "    -c ", { "Ref" : "ExistingClusterHostPort" },
+	        "    --server-add=`hostname -i`:8091","\n",
+	        "else","\n",
+	        "  echo New membase cluster...","\n",
+          
+	          "  /opt/membase/bin/membase server-add",
+	          "    -u ", { "Ref" : "RESTUserName" }, " -p ", { "Ref" : "RESTPassword" },
+	          "    -c ", { "Fn::GetAtt" : [ "ServerNode0", "PublicDnsName" ] },
+	          "    --server-add=`curl -s http://169.254.169.254/latest/meta-data/public-hostname`:8091","\n",
+          
+	        "fi","\n",
+	        "/bin/sh -c \"", { "Ref" : "AfterConfigure" }, "\"\n"
+            
+        ]]}}
+      },
+      "DependsOn" : "WaitForServerNode0"
+    },
+{% endfor %}   
+
+    "InstanceSecurityGroup" : {
+      "Type" : "AWS::EC2::SecurityGroup",
+      "Properties" : {
+        "GroupDescription" :
+          "Enable SSH access via port 22, web access to 8091, membase/memcached protocol access to 11211 and 11210, and erlang access",
+        "SecurityGroupIngress" : [ {
+          "IpProtocol" : "tcp",
+          "FromPort" : "22",
+          "ToPort" : "22",
+          "CidrIp" : "0.0.0.0/0"
+        }, {
+          "IpProtocol" : "tcp",
+          "FromPort" : "8091",
+          "ToPort" : "8091",
+          "CidrIp" : "0.0.0.0/0"
+        }, {
+          "IpProtocol" : "tcp",
+          "FromPort" : "11211",
+          "ToPort" : "11211",
+          "CidrIp" : "0.0.0.0/0"
+        }, {
+          "IpProtocol" : "tcp",
+          "FromPort" : "11210",
+          "ToPort" : "11210",
+          "CidrIp" : "0.0.0.0/0"
+        }, {
+          "IpProtocol" : "tcp",
+          "FromPort" : "4369",
+          "ToPort" : "4369",
+          "CidrIp" : "0.0.0.0/0"
+        }, {
+          "IpProtocol" : "tcp",
+          "FromPort" : "21100",
+          "ToPort" : "21299",
+          "CidrIp" : "0.0.0.0/0"
+        } ]
+      }
+    },
+
+    "WaitForServerNode0WaitHandle" : {
+      "Type" : "AWS::CloudFormation::WaitConditionHandle",
+      "Properties" : {
+      }
+    },
+
+    "WaitForServerNode0" : {
+      "Type" : "AWS::CloudFormation::WaitCondition",
+      "DependsOn" : "ServerNode0",
+      "Properties" : {
+        "Handle" : {"Ref" : "WaitForServerNode0WaitHandle"},
+        "Timeout" : "420"
+      }
+    }
+  },
+
+  "Outputs" : {
+    "RESTWebConsoleURL" : {
+      "Description" : "The URL for the newly created membase node(s)",
+      "Value" : { "Fn::Join" : ["", [ "http://", { "Fn::GetAtt" : [ "ServerNode0", "PublicDnsName" ] }, ":8091" ]]}
+    }
+  }
+}
+
