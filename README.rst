@@ -1,3 +1,5 @@
+UPDATE: Read more on this blog post: http://forecastcloudy.net/2011/12/06/membase-cluster-instead-of-elasticache-in-5-minutes/
+
 Membase CloudFormation Template Generator
 =========================================
 
