@@ -1,3 +1,11 @@
+
+=======================================================================================================
+Membase is long dead (merged with CouchDB) and no body uses it anymore, least of all on CloudFormation. This is left here for case studies only and for tech archeology.
+=======================================================================================================
+
+
+
+
 UPDATE: Read more on this blog post: http://forecastcloudy.net/2011/12/06/membase-cluster-instead-of-elasticache-in-5-minutes/
 
 Membase CloudFormation Template Generator
